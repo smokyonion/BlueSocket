@@ -25,7 +25,7 @@
             
             // SocketTests
             linuxCount = SocketTests.allTests.count
-            darwinCount = Int(SocketTests.defaultTestSuite().testCaseCount)
+            darwinCount = Int(SocketTests.defaultTestSuite.testCaseCount)
             XCTAssertEqual(linuxCount, darwinCount, "\(darwinCount - linuxCount) tests are missing from SocketTests.allTests")
         }
     }
