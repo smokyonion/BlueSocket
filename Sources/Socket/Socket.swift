@@ -1626,13 +1626,18 @@ public class Socket: SocketReader, SocketWriter {
 			throw Error(with: sslError)
 		}
 
+		// Get the signature for the socket...
+		guard let sig = self.signature else {
+
+			throw Error(code: Socket.SOCKET_ERR_INTERNAL, reason: "Socket signature not found.")
+		}
+
 		// Create the hints for our search...
-		let socketType: SocketType = .stream
 		#if os(Linux)
 			var hints = addrinfo(
 				ai_flags: AI_PASSIVE,
-				ai_family: AF_UNSPEC,
-				ai_socktype: socketType.value,
+				ai_family: sig.protocolFamily.value,
+				ai_socktype: sig.socketType.value,
 				ai_protocol: 0,
 				ai_addrlen: 0,
 				ai_addr: nil,
@@ -1641,8 +1646,8 @@ public class Socket: SocketReader, SocketWriter {
 		#else
 			var hints = addrinfo(
 				ai_flags: AI_PASSIVE,
-				ai_family: AF_UNSPEC,
-				ai_socktype: socketType.value,
+				ai_family: sig.protocolFamily.value,
+				ai_socktype: sig.socketType.value,
 				ai_protocol: 0,
 				ai_addrlen: 0,
 				ai_canonname: nil,
