@@ -1587,8 +1587,9 @@ public class Socket: SocketReader, SocketWriter {
 	///					will be changed to non-blocking mode temporarily if a timeout greater
 	///					than zero (0) is provided. The returned socket will be set back to its
 	///					original setting (blocking or non-blocking).*
+	/// 	- clientPort: client port that will be bound to the scoket
 	///
-	public func connect(to host: String, port: Int32, timeout: UInt = 0) throws {
+	public func connect(to host: String, port: Int32, timeout: UInt = 0, bind clientPort: UInt16 = 0) throws {
 
 		// The socket must've been created and must not be connected...
 		if self.socketfd == Socket.SOCKET_INVALID_DESCRIPTOR {
@@ -1626,13 +1627,18 @@ public class Socket: SocketReader, SocketWriter {
 			throw Error(with: sslError)
 		}
 
+		// Get the signature for the socket...
+		guard let sig = self.signature else {
+
+			throw Error(code: Socket.SOCKET_ERR_INTERNAL, reason: "Socket signature not found.")
+		}
+
 		// Create the hints for our search...
-		let socketType: SocketType = .stream
 		#if os(Linux)
 			var hints = addrinfo(
 				ai_flags: AI_PASSIVE,
-				ai_family: AF_UNSPEC,
-				ai_socktype: socketType.value,
+				ai_family: sig.protocolFamily.value,
+				ai_socktype: sig.socketType.value,
 				ai_protocol: 0,
 				ai_addrlen: 0,
 				ai_addr: nil,
@@ -1641,8 +1647,8 @@ public class Socket: SocketReader, SocketWriter {
 		#else
 			var hints = addrinfo(
 				ai_flags: AI_PASSIVE,
-				ai_family: AF_UNSPEC,
-				ai_socktype: socketType.value,
+				ai_family: sig.protocolFamily.value,
+				ai_socktype: sig.socketType.value,
 				ai_protocol: 0,
 				ai_addrlen: 0,
 				ai_canonname: nil,
@@ -1702,6 +1708,11 @@ public class Socket: SocketReader, SocketWriter {
 					
 					throw Error(code: Socket.SOCKET_ERR_SET_FCNTL_FAILED, reason: self.lastError())
 				}
+			}
+
+			// Check to see if the socket is UDP protocol and has a valid client port to be bound to
+			if clientPort > 0 && sig.proto == .udp {
+				try bind(socket: socketDescriptor!, toPort: clientPort)
 			}
 
 			// Connect to the server...
@@ -3365,6 +3376,35 @@ public class Socket: SocketReader, SocketWriter {
 	}
 
 	// MARK: Private Functions
+
+	/// UDP client socket only
+	/// Bind a socket to the client socket address
+	///
+	/// - Parameters:
+	///   - socket: the socket to be bound with
+	///   - toPort: the client port to be bound to
+	/// - Throws: Socket.Error
+	private func bind(socket: Int32, toPort: UInt16) throws {
+		// socket address for the client
+		var client = sockaddr_in()
+
+		// configure the client's socket address
+		client.sin_family = sa_family_t(AF_INET)
+		client.sin_port = in_port_t(toPort)
+		client.sin_addr.s_addr = Socket.INADDR_ANY
+
+		// bind the socket to the socket address
+		let result = withUnsafeMutablePointer(to: &client) {
+			$0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+				Darwin.bind(socket, UnsafeMutablePointer<sockaddr>($0), socklen_t(MemoryLayout<sockaddr_in>.size))
+			}
+		}
+
+		// throw error if the socket could not be bound to the socket address
+		if result == -1 {
+			throw Error(code: Socket.SOCKET_ERR_BIND_FAILED, reason: "Unable to bind client socket to port \(toPort)")
+		}
+	}
 
 	///
 	/// Closes the current socket.
